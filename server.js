@@ -4,6 +4,7 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { renderDashboard } from './dashboard.js';
+import { HighLevelClient } from './highlevel.js';
 import { MetaClient } from './meta.js';
 import { runTick } from './scheduler.js';
 import { SupabaseStore } from './supabase.js';
@@ -12,6 +13,7 @@ import { timingSafeEqual, verifyMetaSignature } from './utils.js';
 const config = loadConfig();
 const store = new SupabaseStore(config);
 const meta = new MetaClient(config, store);
+const messaging = config.messagingProvider === 'highlevel' ? new HighLevelClient(config, store) : meta;
 const publicDir = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
 
 const send = (res, status, body, type = 'application/json') => { res.writeHead(status, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(body) : body); };
@@ -28,7 +30,7 @@ const requireInternal = (req, res) => { if (timingSafeEqual(req.headers['x-inter
 
 async function dashboard(res, notice = '') {
   const [settings, queues, contacts] = await Promise.all([store.settings(), store.dashboardQueue(), store.recentContacts()]);
-  send(res, 200, renderDashboard({ settings, queues, contacts, csrf: config.adminFormToken, notice }), 'text/html');
+  send(res, 200, renderDashboard({ settings, queues, contacts, csrf: config.adminFormToken, notice, provider: config.messagingProvider }), 'text/html');
 }
 
 async function adminAction(form) {
@@ -39,14 +41,16 @@ async function adminAction(form) {
   }
   if (form.action === 'contact_status') { await store.updateContact(form.contact_id, { status: form.status }); await store.cancelQueue(form.contact_id, `manually_marked_${form.status}`); return `Lead marked ${form.status}.`; }
   if (form.action === 'backfill') {
-    if (!config.businessAccountId) throw new Error('META_BUSINESS_ACCOUNT_ID is required for backfill');
-    const result = await meta.backfill(config.businessAccountId, config.platform);
+    if (config.messagingProvider === 'meta' && !config.businessAccountId) throw new Error('META_BUSINESS_ACCOUNT_ID is required for backfill');
+    const result = config.messagingProvider === 'highlevel'
+      ? await messaging.backfill()
+      : await messaging.backfill(config.businessAccountId, config.platform);
     return `Imported ${result.conversations} conversations and ${result.messages} messages.`;
   }
   const queue = await store.queue(form.queue_id);
   if (!queue) throw new Error('Queue item not found');
   if (form.action === 'approve') { await store.updateQueue(queue.id, { status: 'approved', approved_at: new Date().toISOString() }); return `Follow-up #${queue.stage} approved.`; }
-  if (form.action === 'send') { await store.updateQueue(queue.id, { status: 'approved', approved_at: new Date().toISOString(), scheduled_for: new Date().toISOString() }); const settings = await store.settings(); const result = await meta.sendQueue(queue, settings); return result.sent ? `Follow-up #${queue.stage} sent.` : `Not sent: ${result.skipped}.`; }
+  if (form.action === 'send') { await store.updateQueue(queue.id, { status: 'approved', approved_at: new Date().toISOString(), scheduled_for: new Date().toISOString() }); const settings = await store.settings(); const result = await messaging.sendQueue(queue, settings); return result.sent ? `Follow-up #${queue.stage} sent.` : `Not sent: ${result.skipped}.`; }
   if (form.action === 'skip') { await store.updateQueue(queue.id, { status: 'skipped' }); await store.updateContact(queue.contact_id, { current_stage: queue.stage }); return `Stage #${queue.stage} skipped without sending.`; }
   throw new Error('Unknown action');
 }
@@ -56,16 +60,22 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, config.publicBaseUrl);
     if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true });
     if (req.method === 'GET' && url.pathname === '/webhooks/meta') {
+      if (config.messagingProvider !== 'meta') return send(res, 404, { error: 'meta_provider_disabled' });
       if (url.searchParams.get('hub.mode') === 'subscribe' && timingSafeEqual(url.searchParams.get('hub.verify_token'), config.metaVerifyToken)) return send(res, 200, url.searchParams.get('hub.challenge') || '', 'text/plain');
       return send(res, 403, { error: 'verification_failed' });
     }
     if (req.method === 'POST' && url.pathname === '/webhooks/meta') {
+      if (config.messagingProvider !== 'meta') return send(res, 404, { error: 'meta_provider_disabled' });
       const raw = await readBody(req);
       if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], config.metaAppSecret)) return send(res, 401, { error: 'invalid_signature' });
       const result = await meta.processWebhook(JSON.parse(raw));
       return send(res, 200, result);
     }
-    if (req.method === 'POST' && url.pathname === '/internal/tick') { if (!requireInternal(req,res)) return; return send(res, 200, await runTick(store, meta)); }
+    if (req.method === 'POST' && url.pathname === '/internal/tick') {
+      if (!requireInternal(req,res)) return;
+      const synced = config.messagingProvider === 'highlevel' ? await messaging.syncRecent() : null;
+      return send(res, 200, { synced, ...(await runTick(store, messaging)) });
+    }
     if (req.method === 'GET' && url.pathname === '/internal/summary') { if (!requireInternal(req,res)) return; const [settings,queue,contacts]=await Promise.all([store.settings(),store.dashboardQueue(),store.recentContacts()]); const counts=(items,key)=>Object.fromEntries(Object.entries(Object.groupBy(items,key)).map(([k,v])=>[k,v.length])); return send(res,200,{settings,queue_counts:counts(queue,q=>q.status),contact_counts:counts(contacts,c=>c.status)}); }
     if (req.method === 'GET' && url.pathname.startsWith('/media/')) {
       const name = url.pathname.split('/').pop();
@@ -86,7 +96,10 @@ let tickRunning = false;
 async function scheduledTick() {
   if (tickRunning) return;
   tickRunning = true;
-  try { console.log('Scheduled tick', JSON.stringify(await runTick(store, meta))); }
+  try {
+    const synced = config.messagingProvider === 'highlevel' ? await messaging.syncRecent() : null;
+    console.log('Scheduled tick', JSON.stringify({ synced, ...(await runTick(store, messaging)) }));
+  }
   catch (error) { console.error('Scheduled tick failed', error); }
   finally { tickRunning = false; }
 }
