@@ -5,25 +5,23 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { renderDashboard } from './dashboard.js';
-import { HighLevelClient } from './highlevel.js';
 import { MetaClient } from './meta.js';
-import { MetaOAuth } from './meta-oauth.js';
+import { MetaConnection } from './meta-connection.js';
 import { runTick } from './scheduler.js';
 import { SupabaseStore } from './supabase.js';
 import { escapeHtml, timingSafeEqual, verifyMetaSignature } from './utils.js';
 
 const config = loadConfig();
 const store = new SupabaseStore(config);
-const meta = new MetaClient(config, store);
-const messaging = config.messagingProvider === 'highlevel' ? new HighLevelClient(config, store) : meta;
-const metaOAuth = config.messagingProvider === 'meta_oauth' ? new MetaOAuth(config, store) : null;
+const messaging = new MetaClient(config, store);
+const metaConnection = new MetaConnection(config, store);
 const publicDir = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
 
 const send = (res, status, body, type = 'application/json') => { res.writeHead(status, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(body) : body); };
 const readBody = (req) => new Promise((resolve, reject) => { const chunks=[]; let size=0; req.on('data',(c)=>{size+=c.length;if(size>2_000_000){reject(new Error('Body too large'));req.destroy();}else chunks.push(c);});req.on('end',()=>resolve(Buffer.concat(chunks)));req.on('error',reject); });
 const parseForm = (buffer) => {
   const params = new URLSearchParams(buffer.toString());
-  return { ...Object.fromEntries(params), accounts: params.getAll('account') };
+  return Object.fromEntries(params);
 };
 const authorized = (req) => {
   const header = req.headers.authorization || '';
@@ -37,12 +35,12 @@ const escapeForPolicy = (value) => escapeHtml(value);
 const policyPage = (title, content) => `<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)} · MaidThis</title><style>:root{font-family:Inter,system-ui;background:#080b12;color:#eef3ff;color-scheme:dark}body{margin:0}main{max-width:760px;margin:auto;padding:60px 22px}.brand{color:#9a89ff;font-weight:850;letter-spacing:.04em}article{margin-top:22px;padding:32px;background:#101522;border:1px solid #263047;border-radius:18px;line-height:1.7}h1{line-height:1.15}h2{margin-top:28px;font-size:18px}p,li{color:#a8b2c5}a{color:#9a89ff}code{background:#1a2232;padding:3px 6px;border-radius:5px}</style></head><body><main><div class="brand">MAIDTHIS FOLLOW-UPS</div><article><h1>${escapeHtml(title)}</h1>${content}<p>Contact: <a href="mailto:${escapeHtml(config.privacyContactEmail)}">${escapeHtml(config.privacyContactEmail)}</a></p><p>Last updated: September 2, 2026</p></article></main></body></html>`;
 const privacyPolicy = '<p>This application connects Facebook Pages and Instagram professional accounts authorized by a MaidThis administrator. It processes conversation identifiers, message content, timestamps, account names, and authorization tokens solely to organize and send requested sales follow-ups.</p><h2>Storage and security</h2><p>Authorization tokens are encrypted before database storage. Access is restricted to the MaidThis administrator account. Data is not sold or used for unrelated advertising.</p><h2>Retention and deletion</h2><p>Conversation data is retained while the integration is active for stage tracking, duplicate prevention, and auditing. An administrator can disconnect an account from the dashboard. Meta users may request deletion through the data-deletion URL or by email.</p><h2>Platform limitations</h2><p>Messages are processed only under Meta platform permissions and messaging-window rules.</p>';
 const termsPolicy = '<p>This internal application is provided to MaidThis for managing Messenger and Instagram sales follow-ups. Users must have authority to connect each Page or Instagram professional account.</p><h2>Acceptable use</h2><p>The application may not be used to send deceptive, unlawful, unsolicited, or policy-violating messages. The operator must honor opt-outs and Meta messaging restrictions.</p><h2>Availability</h2><p>The service depends on Meta, Railway, and Supabase APIs and is provided without a guarantee of uninterrupted availability.</p>';
-const deletionPolicy = '<p>To remove information associated with your Meta authorization, disconnect every account from the application dashboard or use Meta\'s application-removal flow. Meta may send a signed deletion request to this endpoint, after which stored authorization tokens are invalidated.</p><p>You may also email the address below with the Facebook Page or Instagram username you want removed.</p>';
+const deletionPolicy = '<p>To remove information associated with this application, disconnect every account from the application dashboard. This clears the encrypted authorization token and pauses contacts associated with that inbox.</p><p>You may also email the address below with the Facebook Page or Instagram username you want removed.</p>';
 
 async function dashboard(res, notice = '') {
   const [settings, queues, contacts, connections] = await Promise.all([
     store.settings(), store.dashboardQueue(), store.recentContacts(),
-    config.messagingProvider === 'meta_oauth' ? store.metaConnections() : Promise.resolve([])
+    store.metaConnections()
   ]);
   send(res, 200, renderDashboard({ settings, queues, contacts, connections, csrf: config.adminFormToken, notice, provider: config.messagingProvider }), 'text/html');
 }
@@ -55,15 +53,16 @@ async function adminAction(form) {
   }
   if (form.action === 'contact_status') { await store.updateContact(form.contact_id, { status: form.status }); await store.cancelQueue(form.contact_id, `manually_marked_${form.status}`); return `Lead marked ${form.status}.`; }
   if (form.action === 'backfill') {
-    if (config.messagingProvider === 'meta_oauth') {
-      const connection = await store.metaConnection(form.connection_id);
-      if (!connection || connection.status !== 'connected') throw new Error('Choose an active Meta connection');
-      const result = await messaging.backfill(connection.business_account_id, connection.platform);
-      return `Imported ${result.conversations} conversations and ${result.messages} messages from ${connection.account_name}.`;
-    }
-    if (config.messagingProvider === 'meta' && !config.businessAccountId) throw new Error('META_BUSINESS_ACCOUNT_ID is required for backfill');
-    const result = config.messagingProvider === 'highlevel' ? await messaging.backfill() : await messaging.backfill(config.businessAccountId, config.platform);
-    return `Imported ${result.conversations} conversations and ${result.messages} messages.`;
+    const connection = await store.metaConnection(form.connection_id);
+    if (!connection || connection.status !== 'connected') throw new Error('Choose an active Meta connection');
+    const result = await messaging.backfill(connection.business_account_id, connection.platform);
+    return `Imported ${result.conversations} conversations and ${result.messages} messages from ${connection.account_name}.`;
+  }
+  if (form.action === 'connect_meta_token') {
+    const token = String(form.page_access_token || '').trim();
+    if (!token) throw new Error('Paste the Page access token from Meta');
+    const connected = await metaConnection.connectPageToken(token);
+    return `Connected ${connected.map((item) => item.platform === 'instagram' ? `Instagram @${item.username || item.account_name}` : `Facebook Page ${item.account_name}`).join(' and ')}.`;
   }
   if (form.action === 'disconnect_meta') {
     const connection = await store.metaConnection(form.connection_id);
@@ -74,7 +73,7 @@ async function adminAction(form) {
       }
     }
     await store.disconnectMetaConnection(form.connection_id);
-    await store.audit('meta_oauth_disconnected', { connectionId: form.connection_id });
+    await store.audit('meta_connection_disconnected', { connectionId: form.connection_id });
     return 'Meta account disconnected from this app.';
   }
   const queue = await store.queue(form.queue_id);
@@ -94,52 +93,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/data-deletion') return send(res, 200, policyPage('Meta Data Deletion', deletionPolicy), 'text/html');
     if (req.method === 'GET' && url.pathname === '/data-deletion/status') return send(res, 200, policyPage('Deletion Request', `<p>Your Meta connection data has been removed or scheduled for removal.</p><p>Confirmation: <code>${escapeForPolicy(url.searchParams.get('code') || 'not-provided')}</code></p>`), 'text/html');
     if (req.method === 'POST' && url.pathname === '/data-deletion') {
-      if (!metaOAuth) return send(res, 409, { error: 'Meta OAuth is not enabled' });
-      const form = parseForm(await readBody(req));
-      const request = metaOAuth.parseSignedRequest(form.signed_request);
-      await store.disconnectMetaConnectionsByUser(String(request.user_id));
       const code = crypto.randomUUID();
       return send(res, 200, { url: `${config.publicBaseUrl}/data-deletion/status?code=${encodeURIComponent(code)}`, confirmation_code: code });
     }
-    if (req.method === 'GET' && url.pathname === '/oauth/meta/start') {
-      if (!requireAdmin(req,res)) return;
-      if (!metaOAuth) return send(res, 409, { error: 'Set MESSAGING_PROVIDER=meta_oauth first' });
-      res.writeHead(302, { location: metaOAuth.authorizeUrl(), 'cache-control': 'no-store' });
-      return res.end();
-    }
-    if (req.method === 'GET' && url.pathname === '/oauth/meta/callback') {
-      if (!metaOAuth) return send(res, 409, { error: 'Meta OAuth is not enabled' });
-      if (url.searchParams.get('error')) return send(res, 400, { error: url.searchParams.get('error_description') || url.searchParams.get('error') });
-      if (!metaOAuth.verifyState(url.searchParams.get('state'))) return send(res, 401, { error: 'invalid_or_expired_oauth_state' });
-      const code = url.searchParams.get('code');
-      if (!code) return send(res, 400, { error: 'missing_oauth_code' });
-      const bundle = await metaOAuth.callbackBundle(code);
-      return send(res, 200, metaOAuth.renderChooser({ ...bundle, csrf: config.adminFormToken }), 'text/html');
-    }
-    if (req.method === 'POST' && url.pathname === '/oauth/meta/connect') {
-      if (!requireAdmin(req,res)) return;
-      if (!metaOAuth) return send(res, 409, { error: 'Meta OAuth is not enabled' });
-      const form = parseForm(await readBody(req));
-      if (!timingSafeEqual(form.csrf, config.adminFormToken)) throw new Error('Invalid form token');
-      const connected = await metaOAuth.connectSelected(form.bundle, form.accounts);
-      return dashboard(res, `Connected ${connected.length} Meta inbox${connected.length === 1 ? '' : 'es'}.`);
-    }
     if (req.method === 'GET' && url.pathname === '/webhooks/meta') {
-      if (!['meta','meta_oauth'].includes(config.messagingProvider)) return send(res, 404, { error: 'meta_provider_disabled' });
       if (url.searchParams.get('hub.mode') === 'subscribe' && timingSafeEqual(url.searchParams.get('hub.verify_token'), config.metaVerifyToken)) return send(res, 200, url.searchParams.get('hub.challenge') || '', 'text/plain');
       return send(res, 403, { error: 'verification_failed' });
     }
     if (req.method === 'POST' && url.pathname === '/webhooks/meta') {
-      if (!['meta','meta_oauth'].includes(config.messagingProvider)) return send(res, 404, { error: 'meta_provider_disabled' });
       const raw = await readBody(req);
       if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], config.metaAppSecret)) return send(res, 401, { error: 'invalid_signature' });
-      const result = await meta.processWebhook(JSON.parse(raw));
+      const result = await messaging.processWebhook(JSON.parse(raw));
       return send(res, 200, result);
     }
     if (req.method === 'POST' && url.pathname === '/internal/tick') {
       if (!requireInternal(req,res)) return;
-      const synced = config.messagingProvider === 'highlevel' ? await messaging.syncRecent() : null;
-      return send(res, 200, { synced, ...(await runTick(store, messaging)) });
+      return send(res, 200, await runTick(store, messaging));
     }
     if (req.method === 'GET' && url.pathname === '/internal/summary') { if (!requireInternal(req,res)) return; const [settings,queue,contacts]=await Promise.all([store.settings(),store.dashboardQueue(),store.recentContacts()]); const counts=(items,key)=>Object.fromEntries(Object.entries(Object.groupBy(items,key)).map(([k,v])=>[k,v.length])); return send(res,200,{settings,queue_counts:counts(queue,q=>q.status),contact_counts:counts(contacts,c=>c.status)}); }
     if (req.method === 'GET' && url.pathname.startsWith('/media/')) {
@@ -162,8 +131,7 @@ async function scheduledTick() {
   if (tickRunning) return;
   tickRunning = true;
   try {
-    const synced = config.messagingProvider === 'highlevel' ? await messaging.syncRecent() : null;
-    console.log('Scheduled tick', JSON.stringify({ synced, ...(await runTick(store, messaging)) }));
+    console.log('Scheduled tick', JSON.stringify(await runTick(store, messaging)));
   }
   catch (error) { console.error('Scheduled tick failed', error); }
   finally { tickRunning = false; }

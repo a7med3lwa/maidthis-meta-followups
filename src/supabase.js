@@ -101,11 +101,6 @@ export class SupabaseStore {
       method: 'PATCH', body: { status: 'disconnected', token_ciphertext: null, updated_at: new Date().toISOString() }, prefer: 'return=representation'
     });
   }
-  disconnectMetaConnectionsByUser(userId) {
-    return this.request(`meta_connections?connected_by_user_id=eq.${encodeURIComponent(userId)}`, {
-      method: 'PATCH', body: { status: 'disconnected', token_ciphertext: null, updated_at: new Date().toISOString() }, prefer: 'return=representation'
-    });
-  }
   updateSettings(data) { return this.request('automation_settings?id=eq.true', { method: 'PATCH', body: { ...data, updated_at: new Date().toISOString() }, prefer: 'return=representation' }); }
   audit(action, detail = {}, contactId = null, queueId = null) {
     return this.request('audit_log', { method: 'POST', body: { action, detail, contact_id: contactId, queue_id: queueId } });

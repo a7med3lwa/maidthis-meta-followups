@@ -20,5 +20,5 @@ create index if not exists meta_connections_account_idx on meta_connections (bus
 
 alter table meta_connections enable row level security;
 
-comment on table meta_connections is 'Meta Pages and Instagram accounts authorized through OAuth. Tokens are AES-256-GCM encrypted by the application before storage.';
+comment on table meta_connections is 'Meta Pages and Instagram accounts connected by a Page access token. Tokens are AES-256-GCM encrypted by the application before storage.';
 comment on column meta_connections.token_ciphertext is 'Encrypted Page access token. Never store or display plaintext tokens.';

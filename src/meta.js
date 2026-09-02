@@ -10,14 +10,9 @@ export class MetaClient {
   }
 
   async tokenFor(accountId) {
-    const configured = this.config.metaTokens[accountId] || this.config.defaultMetaToken;
-    if (configured) return configured;
-    if (this.config.messagingProvider === 'meta_oauth') {
-      const connection = await this.store.metaConnectionByAccount(accountId);
-      if (!connection?.token_ciphertext) throw new Error(`No active Meta OAuth connection for account ${accountId}`);
-      return decryptSecret(connection.token_ciphertext, this.config.tokenEncryptionKey);
-    }
-    throw new Error(`No Meta token configured for account ${accountId}`);
+    const connection = await this.store.metaConnectionByAccount(accountId);
+    if (!connection?.token_ciphertext) throw new Error(`No active Meta connection for account ${accountId}`);
+    return decryptSecret(connection.token_ciphertext, this.config.tokenEncryptionKey);
   }
 
   async graphRequest(path, { method = 'GET', token, body } = {}) {
