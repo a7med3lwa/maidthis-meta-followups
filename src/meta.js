@@ -1,4 +1,5 @@
 import { detectTemplateStage } from './template-matcher.js';
+import { decryptSecret } from './token-crypto.js';
 import { isStopMessage, renderTemplate } from './utils.js';
 
 export class MetaClient {
@@ -8,7 +9,16 @@ export class MetaClient {
     this.graph = `https://graph.facebook.com/${config.metaGraphVersion}`;
   }
 
-  tokenFor(accountId) { return this.config.metaTokens[accountId] || this.config.defaultMetaToken; }
+  async tokenFor(accountId) {
+    const configured = this.config.metaTokens[accountId] || this.config.defaultMetaToken;
+    if (configured) return configured;
+    if (this.config.messagingProvider === 'meta_oauth') {
+      const connection = await this.store.metaConnectionByAccount(accountId);
+      if (!connection?.token_ciphertext) throw new Error(`No active Meta OAuth connection for account ${accountId}`);
+      return decryptSecret(connection.token_ciphertext, this.config.tokenEncryptionKey);
+    }
+    throw new Error(`No Meta token configured for account ${accountId}`);
+  }
 
   async graphRequest(path, { method = 'GET', token, body } = {}) {
     const response = await fetch(`${this.graph}/${path}`, {
@@ -23,13 +33,13 @@ export class MetaClient {
 
   async profile(accountId, userId) {
     try {
-      return await this.graphRequest(`${userId}?fields=first_name,last_name`, { token: this.tokenFor(accountId) });
+      return await this.graphRequest(`${userId}?fields=first_name,last_name`, { token: await this.tokenFor(accountId) });
     } catch { return {}; }
   }
 
   async sendPart(contact, payload) {
     return this.graphRequest(`${contact.business_account_id}/messages`, {
-      method: 'POST', token: this.tokenFor(contact.business_account_id),
+      method: 'POST', token: await this.tokenFor(contact.business_account_id),
       body: { recipient: { id: contact.platform_user_id }, messaging_type: 'RESPONSE', message: payload }
     });
   }
@@ -132,7 +142,7 @@ export class MetaClient {
   }
 
   async backfill(accountId, platform = 'messenger') {
-    const token = this.tokenFor(accountId);
+    const token = await this.tokenFor(accountId);
     const templates = await this.store.templates();
     const fields = `id,participants,messages.limit(${this.config.backfillMessagesPerConversation}){id,message,from,to,created_time,attachments}`;
     let url = `${accountId}/conversations?platform=${platform}&fields=${encodeURIComponent(fields)}&limit=50`;

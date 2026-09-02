@@ -1,5 +1,7 @@
 # MaidThis browser-only setup on Railway
 
+> **Current recommended setup:** Use the standalone login flow in [META-OAUTH-SETUP.md](META-OAUTH-SETUP.md). The administrator connects Facebook and Instagram from the MaidThis dashboard through Meta OAuth.
+
 This is the simplest deployment path. You need Supabase, GitHub, Railway, and Meta accounts. You do not need n8n.
 
 ## 1. Replace the exposed Supabase key

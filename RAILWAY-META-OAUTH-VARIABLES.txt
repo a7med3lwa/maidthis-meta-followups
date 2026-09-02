@@ -1,0 +1,26 @@
+Add these under Railway > MaidThis service > Variables.
+
+MESSAGING_PROVIDER=meta_oauth
+META_APP_ID=PASTE_META_APP_ID
+META_APP_SECRET=PASTE_META_APP_SECRET
+META_VERIFY_TOKEN=CREATE_A_PRIVATE_RANDOM_VALUE
+META_GRAPH_VERSION=v23.0
+TOKEN_ENCRYPTION_KEY=CREATE_A_64_CHARACTER_HEX_VALUE
+PRIVACY_CONTACT_EMAIL=YOUR_REAL_CONTACT_EMAIL
+
+Keep all existing working variables, especially:
+PUBLIC_BASE_URL=https://maidthis-meta-followups-production.up.railway.app
+SUPABASE_URL=https://eymobfdkrgluiujbctly.supabase.co
+SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
+ADMIN_USER
+ADMIN_PASSWORD
+ADMIN_FORM_TOKEN
+INTERNAL_TOKEN
+INTERNAL_SCHEDULER_ENABLED=true
+TICK_INTERVAL_MINUTES=5
+
+Generate private values in Supabase SQL Editor:
+select encode(gen_random_bytes(32), 'hex') as random_value;
+
+Never store Meta App Secret, TOKEN_ENCRYPTION_KEY, or Supabase secret keys in GitHub.
+

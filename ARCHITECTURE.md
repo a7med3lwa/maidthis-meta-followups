@@ -38,7 +38,10 @@ Stages 3 and 9 consist of a text message followed by an image. The queue stores 
 
 ## Security boundaries
 
+- Meta OAuth: signed, expiring state values prevent login CSRF. Meta access tokens are exchanged server-side and encrypted with AES-256-GCM before database storage.
+- OAuth account selection: Page tokens travel back to the server only inside an authenticated encrypted bundle with a 15-minute expiry.
 - Meta webhook: verified using the raw request body and `X-Hub-Signature-256`.
+- Meta data deletion: signed requests are verified with the App Secret before stored tokens are invalidated.
 - n8n scheduler: authenticated with `x-internal-token`.
 - Admin interface: HTTP Basic Authentication plus a form token.
 - Supabase: service-role access from the server only; RLS blocks unauthenticated table access.

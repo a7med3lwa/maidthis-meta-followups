@@ -1,9 +1,9 @@
 {
   "name": "maidthis-meta-followups",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Policy-aware Meta Messenger and Instagram follow-up automation for MaidThis",
+  "description": "Standalone Meta OAuth Messenger and Instagram follow-up automation for MaidThis",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/server.js",

@@ -35,13 +35,13 @@ export async function scheduleDue(store, now = new Date()) {
   return { created: created.length, queues: created };
 }
 
-export async function runTick(store, meta, now = new Date()) {
+export async function runTick(store, messaging, now = new Date()) {
   const settings = await store.settings();
   const scheduled = await scheduleDue(store, now);
   const due = settings.auto_enabled ? await store.dueQueues(now, !settings.review_mode) : [];
   const results = [];
   for (const queue of due.slice(0, settings.batch_size)) {
-    try { results.push({ id: queue.id, ...(await meta.sendQueue(queue, settings)) }); }
+    try { results.push({ id: queue.id, ...(await messaging.sendQueue(queue, settings)) }); }
     catch (error) { results.push({ id: queue.id, error: error.message }); }
   }
   return { scheduled: scheduled.created, processed: results.length, results };

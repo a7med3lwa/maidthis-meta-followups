@@ -80,6 +80,32 @@ export class SupabaseStore {
     return this.request('followup_queue?status=in.(pending,approved,blocked_policy,failed)&select=*,contacts(*),followup_templates(*)&order=scheduled_for.asc&limit=250');
   }
   recentContacts() { return this.request('contacts?select=*&order=updated_at.desc&limit=100'); }
+  metaConnections() {
+    return this.request('meta_connections?status=eq.connected&select=id,platform,business_account_id,page_id,account_name,username,connected_by,status,last_verified_at,created_at,updated_at&order=created_at.asc');
+  }
+  metaConnection(id) { return this.one(`meta_connections?id=eq.${encodeURIComponent(id)}&select=*`); }
+  metaConnectionByAccount(accountId) {
+    return this.one(`meta_connections?business_account_id=eq.${encodeURIComponent(accountId)}&status=eq.connected&select=*`);
+  }
+  contactsByBusinessAccount(accountId) {
+    return this.request(`contacts?business_account_id=eq.${encodeURIComponent(accountId)}&select=id`);
+  }
+  async upsertMetaConnection(data) {
+    const rows = await this.request('meta_connections?on_conflict=platform,business_account_id', {
+      method: 'POST', body: { ...data, last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates,return=representation'
+    });
+    return rows[0];
+  }
+  disconnectMetaConnection(id) {
+    return this.request(`meta_connections?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: { status: 'disconnected', token_ciphertext: null, updated_at: new Date().toISOString() }, prefer: 'return=representation'
+    });
+  }
+  disconnectMetaConnectionsByUser(userId) {
+    return this.request(`meta_connections?connected_by_user_id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH', body: { status: 'disconnected', token_ciphertext: null, updated_at: new Date().toISOString() }, prefer: 'return=representation'
+    });
+  }
   updateSettings(data) { return this.request('automation_settings?id=eq.true', { method: 'PATCH', body: { ...data, updated_at: new Date().toISOString() }, prefer: 'return=representation' }); }
   audit(action, detail = {}, contactId = null, queueId = null) {
     return this.request('audit_log', { method: 'POST', body: { action, detail, contact_id: contactId, queue_id: queueId } });
