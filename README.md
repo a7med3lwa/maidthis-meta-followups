@@ -1,15 +1,16 @@
-# MaidThis Meta Follow-ups v3
+# MaidThis Meta Follow-ups v3.1
 
 A standalone Facebook Messenger and Instagram follow-up service with a dark operations dashboard, deterministic 10-stage tracking, reply cancellation, duplicate protection, encrypted Meta tokens, and Meta policy checks.
 
 Start with [FINAL-SETUP-GUIDE.md](FINAL-SETUP-GUIDE.md). It contains the complete GitHub, Supabase, Railway, Meta, testing, rollout, and troubleshooting procedure.
 
-## What changed in v3
+## What changed in v3.1
 
 - Default provider is `meta_manual`.
 - Removed the custom Facebook Login dependency from the normal setup.
-- The dashboard accepts a Page access token generated through Meta's Messenger API Setup.
-- The app verifies the token, subscribes the Page webhook, encrypts the token, and discovers linked Instagram automatically.
+- Connects using the Page ID Meta displays, so `pages_read_engagement` is not required just to save the token.
+- The dashboard accepts the MaidThis Page ID and Page access token generated through Meta's Messenger API Setup.
+- The app avoids optional Page-metadata lookups, encrypts the token, attempts the Page webhook subscription, and adds a permitted Instagram inbox when its first webhook arrives.
 - HighLevel, n8n, and old duplicate deployment files are excluded from the final clean ZIP.
 - Dark mode remains the default. Light mode remains available from the dashboard header.
 
@@ -31,21 +32,19 @@ npm test
 npm run check
 ```
 
-For local runtime, copy `.env.example` to `.env`, replace every placeholder, and run:
+For local runtime, supply the same environment variables already configured in Railway and run:
 
 ```bash
 npm start
 ```
 
-For Railway, use `RAILWAY-VARIABLES.txt`. Railway supplies the runtime `PORT` automatically.
+Railway supplies the runtime `PORT` automatically. Version 3.1 uses the existing Railway variables and requires `MESSAGING_PROVIDER=meta_manual`.
 
 ## Project layout
 
 ```text
 Dockerfile                  Railway/container build
 FINAL-SETUP-GUIDE.md        Complete operator instructions
-GENERATE-SECRETS.html       Offline browser-based secret generator
-RAILWAY-VARIABLES.txt       Clean Railway variable template
 public/                     Follow-up images
 sql/                        Supabase migrations and templates
 src/                        Service, dashboard, Meta, scheduling, storage

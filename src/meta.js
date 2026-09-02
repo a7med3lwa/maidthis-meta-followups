@@ -32,6 +32,27 @@ export class MetaClient {
     } catch { return {}; }
   }
 
+  async ensureWebhookConnection(accountId, platform) {
+    const existing = await this.store.metaConnectionByAccount(accountId);
+    if (existing || platform !== 'instagram') return existing;
+    const page = await this.store.primaryMetaPageConnection();
+    if (!page?.token_ciphertext) return null;
+    const connection = await this.store.upsertMetaConnection({
+      platform: 'instagram',
+      business_account_id: String(accountId),
+      page_id: page.page_id,
+      account_name: `Instagram ${accountId}`,
+      username: null,
+      token_ciphertext: page.token_ciphertext,
+      scopes: page.scopes || ['page_access_token'],
+      connected_by: 'First Instagram webhook',
+      connected_by_user_id: null,
+      status: 'connected'
+    });
+    await this.store.audit('instagram_webhook_connection_created', { accountId: String(accountId), pageId: page.page_id });
+    return connection;
+  }
+
   async sendPart(contact, payload) {
     return this.graphRequest(`${contact.business_account_id}/messages`, {
       method: 'POST', token: await this.tokenFor(contact.business_account_id),
@@ -45,6 +66,7 @@ export class MetaClient {
     let processed = 0;
     for (const entry of payload.entry || []) {
       const accountId = String(entry.id);
+      await this.ensureWebhookConnection(accountId, platform);
       for (const event of entry.messaging || []) {
         const mid = event.message?.mid || `${accountId}:${event.sender?.id}:${event.timestamp}:${event.postback?.mid || 'activity'}`;
         if (!(await this.store.insertEvent(mid))) continue;

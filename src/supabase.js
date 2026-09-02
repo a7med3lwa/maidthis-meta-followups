@@ -87,6 +87,9 @@ export class SupabaseStore {
   metaConnectionByAccount(accountId) {
     return this.one(`meta_connections?business_account_id=eq.${encodeURIComponent(accountId)}&status=eq.connected&select=*`);
   }
+  primaryMetaPageConnection() {
+    return this.one('meta_connections?platform=eq.messenger&status=eq.connected&select=*&order=created_at.asc&limit=1');
+  }
   contactsByBusinessAccount(accountId) {
     return this.request(`contacts?business_account_id=eq.${encodeURIComponent(accountId)}&select=id`);
   }

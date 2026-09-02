@@ -34,39 +34,31 @@ export class MetaConnection {
     });
   }
 
-  async connectPageToken(token) {
-    const page = await this.request('me?fields=id,name,username,instagram_business_account{id,name,username,profile_picture_url}', { token });
-    if (!page?.id || !page?.name) throw new Error('Meta did not recognize this as a Page access token');
-    await this.subscribePage(String(page.id), token);
-    const shared = {
-      page_id: String(page.id),
+  async connectPageToken({ token, pageId, pageName = 'MaidThis Cleaning' }) {
+    const normalizedPageId = String(pageId || '').trim();
+    if (!/^\d+$/.test(normalizedPageId)) throw new Error('Enter the numeric Facebook Page ID shown in Meta');
+    if (!String(token || '').trim()) throw new Error('Paste the Page access token from Meta');
+
+    let subscriptionWarning = null;
+    try { await this.subscribePage(normalizedPageId, token); }
+    catch (error) {
+      subscriptionWarning = 'The Page was saved, but Meta did not allow automatic webhook subscription. Keep the subscriptions already selected in Meta.';
+      await this.store.audit('meta_subscription_warning', { pageId: normalizedPageId, error: error.message });
+    }
+
+    const connection = await this.store.upsertMetaConnection({
+      page_id: normalizedPageId,
       token_ciphertext: encryptSecret(token, this.config.tokenEncryptionKey),
       scopes: ['page_access_token'],
       connected_by: 'Railway administrator',
       connected_by_user_id: null,
-      status: 'connected'
-    };
-    const connected = [await this.store.upsertMetaConnection({
-      ...shared,
+      status: 'connected',
       platform: 'messenger',
-      business_account_id: String(page.id),
-      account_name: page.name,
-      username: page.username || null
-    })];
-    const instagram = page.instagram_business_account;
-    if (instagram?.id) {
-      connected.push(await this.store.upsertMetaConnection({
-        ...shared,
-        platform: 'instagram',
-        business_account_id: String(instagram.id),
-        account_name: instagram.name || instagram.username || `${page.name} Instagram`,
-        username: instagram.username || null
-      }));
-    }
-    await this.store.audit('meta_page_token_connected', {
-      pageId: String(page.id),
-      instagramId: instagram?.id ? String(instagram.id) : null
+      business_account_id: normalizedPageId,
+      account_name: String(pageName || '').trim() || `Facebook Page ${normalizedPageId}`,
+      username: null
     });
-    return connected;
+    await this.store.audit('meta_page_token_connected', { pageId: normalizedPageId });
+    return { connections: [connection], subscriptionWarning };
   }
 }

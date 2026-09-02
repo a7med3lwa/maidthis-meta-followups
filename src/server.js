@@ -61,8 +61,13 @@ async function adminAction(form) {
   if (form.action === 'connect_meta_token') {
     const token = String(form.page_access_token || '').trim();
     if (!token) throw new Error('Paste the Page access token from Meta');
-    const connected = await metaConnection.connectPageToken(token);
-    return `Connected ${connected.map((item) => item.platform === 'instagram' ? `Instagram @${item.username || item.account_name}` : `Facebook Page ${item.account_name}`).join(' and ')}.`;
+    const result = await metaConnection.connectPageToken({
+      token,
+      pageId: form.page_id,
+      pageName: form.page_name
+    });
+    const message = `Connected Facebook Page ${result.connections[0].account_name}.`;
+    return result.subscriptionWarning ? `${message} ${result.subscriptionWarning}` : message;
   }
   if (form.action === 'disconnect_meta') {
     const connection = await store.metaConnection(form.connection_id);

@@ -1,4 +1,4 @@
-# MaidThis Meta Follow-ups v3: Final Setup Guide
+# MaidThis Meta Follow-ups v3.1: Final Setup Guide
 
 This is the simplified final build. It keeps the dark Railway dashboard and removes the separate Facebook Login flow that caused the incompatible-use-case problem.
 
@@ -7,8 +7,8 @@ The connection is now:
 1. Meta shows its own Page-selection popup inside the Messenger API setup.
 2. You choose the MaidThis Facebook Page there.
 3. Meta generates a Page access token.
-4. You paste that token once into the MaidThis dashboard.
-5. The app verifies it, encrypts it, subscribes the webhook, and finds the linked Instagram professional account automatically.
+4. You enter the Page ID shown by Meta and paste the token once into the MaidThis dashboard.
+5. The app encrypts it, attempts the webhook subscription, and avoids the Page-metadata lookup that requires `pages_read_engagement`.
 
 There is no Facebook Login use case, OAuth callback URL, login button, or HighLevel token in this version.
 
@@ -31,8 +31,6 @@ The ZIP has only the files required by Railway:
 maidthis-meta-followups-v3-simple/
   Dockerfile
   package.json
-  RAILWAY-VARIABLES.txt
-  GENERATE-SECRETS.html
   FINAL-SETUP-GUIDE.md
   README.md
   public/
@@ -43,20 +41,15 @@ maidthis-meta-followups-v3-simple/
 
 Old `deploy`, `n8n`, HighLevel setup files, old ZIPs, and old duplicate Dockerfiles are intentionally excluded.
 
-## Phase 0: rotate the exposed secrets
+## Phase 0: keep the current Railway values
 
-Several live secret values were pasted into chat and may also be in deployment history. Treat them as exposed.
+Version 3.1 does not require a new key or a new Railway variable. Keep the currently working Railway values. The required provider value remains:
 
-Do these rotations before production:
+```text
+MESSAGING_PROVIDER=meta_manual
+```
 
-1. **Supabase:** open the Supabase dashboard, select the MaidThis project, open **Project Settings > API Keys**, create a new server secret key, update Railway, then revoke the old server/service-role key.
-2. **Meta:** open the Meta app, go to **App settings > Basic**, reset the App Secret, then update `META_APP_SECRET` in Railway.
-3. Open `GENERATE-SECRETS.html` from the ZIP on your own computer. Click **Regenerate all**, then copy the five generated lines.
-4. Use the generated values for `ADMIN_PASSWORD`, `ADMIN_FORM_TOKEN`, `INTERNAL_TOKEN`, `META_VERIFY_TOKEN`, and `TOKEN_ENCRYPTION_KEY`.
-
-Do not put any live secret in GitHub, `.env.example`, a screenshot, or a support message. `PRIVACY_CONTACT_EMAIL` and `PUBLIC_BASE_URL` are not secrets.
-
-Important: once a real Page token has been connected, changing `TOKEN_ENCRYPTION_KEY` makes the stored token unreadable. If you change it later, disconnect and reconnect the Page with a new Page token.
+Do not put the Page access token in GitHub or Railway. Enter it once through the protected dashboard, where it is encrypted before Supabase storage.
 
 ## Phase 1: replace the GitHub repository cleanly in one upload
 
@@ -123,12 +116,6 @@ For each file:
 
 Running them again is safe because the schema uses `if not exists` and the seed uses upserts.
 
-Then create a new Supabase server secret:
-
-1. Open **Project Settings > API Keys**.
-2. Create or copy a new `sb_secret_...` server key.
-3. Do not use the `sb_publishable_...` key. The backend needs the server secret.
-
 ## Phase 3: set Railway correctly
 
 Open [Railway](https://railway.app/dashboard), select the MaidThis project, then click the `maidthis-meta-followups` service card.
@@ -141,49 +128,9 @@ Open [Railway](https://railway.app/dashboard), select the MaidThis project, then
 4. Under **Build**, clear any old Dockerfile path that points to `deploy/Dockerfile`.
 5. Railway should use the root `Dockerfile`.
 
-### 2. Add the variables
+### 2. Keep the current variables
 
-1. Click the **Variables** tab at the top of the service page. It is beside tabs such as Deployments, Metrics, and Settings.
-2. Click **Raw Editor**, **Add Variables**, or **New Variable**. Railway changes the button label occasionally.
-3. Open `RAILWAY-VARIABLES.txt` from the final project.
-4. Replace every `PASTE_...` placeholder with the new real value.
-5. Paste the complete block into Railway.
-6. Save or deploy the changes.
-
-The final variables are:
-
-| Variable | What to enter |
-|---|---|
-| `PUBLIC_BASE_URL` | `https://maidthis-meta-followups-production.up.railway.app` |
-| `MESSAGING_PROVIDER` | `meta_manual` |
-| `SUPABASE_URL` | `https://eymobfdkrgluiujbctly.supabase.co` |
-| `SUPABASE_SECRET_KEY` | A newly rotated `sb_secret_...` server key |
-| `ADMIN_USER` | `admin`, or another username |
-| `ADMIN_PASSWORD` | New value from `GENERATE-SECRETS.html` |
-| `ADMIN_FORM_TOKEN` | New value from `GENERATE-SECRETS.html` |
-| `INTERNAL_TOKEN` | New value from `GENERATE-SECRETS.html` |
-| `INTERNAL_SCHEDULER_ENABLED` | `true` |
-| `TICK_INTERVAL_MINUTES` | `5` |
-| `META_APP_SECRET` | The rotated App Secret from Meta |
-| `META_VERIFY_TOKEN` | New value from `GENERATE-SECRETS.html` |
-| `META_GRAPH_VERSION` | `v26.0` |
-| `TOKEN_ENCRYPTION_KEY` | The 64-character value from `GENERATE-SECRETS.html` |
-| `PRIVACY_CONTACT_EMAIL` | A real email you monitor |
-| `BACKFILL_CONVERSATION_LIMIT` | `250` |
-| `BACKFILL_MESSAGES_PER_CONVERSATION` | `100` |
-
-Do not add the following old variables:
-
-- `HIGHLEVEL_API_TOKEN`
-- `HIGHLEVEL_LOCATION_ID`
-- `META_APP_ID`
-- `META_OAUTH_SCOPES`
-- `META_PAGE_ACCESS_TOKEN`
-- `META_BUSINESS_ACCOUNT_ID`
-- `META_PLATFORM`
-- `N8N_ENCRYPTION_KEY`
-
-The new dashboard stores the Page token encrypted after you submit it. The Page token does not belong in Railway variables.
+No Railway variable needs to change for v3.1. Confirm only that `MESSAGING_PROVIDER` is still `meta_manual`, then deploy the new repository code. The Page token does not belong in Railway variables.
 
 ### 3. Confirm the port and domain
 
@@ -204,16 +151,18 @@ Then open [the dashboard](https://maidthis-meta-followups-production.up.railway.
 
 ## Phase 4: do the Meta checkpoint first
 
-Use the Meta app that has the **Engage with customers on Messenger from Meta** use case. Do not add the separate **Authenticate and request data from users with Facebook Login** use case. Meta correctly reports that those use cases cannot be combined in that app, and v3 does not need the separate login use case.
+Use the Meta app that has the **Engage with customers on Messenger from Meta** use case. Do not add the separate **Authenticate and request data from users with Facebook Login** use case. Meta correctly reports that those use cases cannot be combined in that app, and v3.1 does not need the separate login use case.
 
 Open [Meta for Developers](https://developers.facebook.com/apps/), choose the app, and open the Messenger use case's **Customize** or **API Setup** page.
 
-Inside that Messenger use case, confirm the permissions/settings available for the app include the current equivalents of:
+Inside that Messenger use case, the important permission for sending and receiving Messenger messages is:
 
-- `pages_show_list`
+- `pages_messaging`
+
+The following may be useful for optional metadata, automatic subscription, or history access, but v3.1 no longer requires `pages_read_engagement` merely to save the Page token:
+
 - `pages_read_engagement`
 - `pages_manage_metadata`
-- `pages_messaging`
 - `instagram_basic`, if Instagram is needed
 - `instagram_manage_messages`, if Instagram is needed
 
@@ -291,20 +240,20 @@ Return to **Generate access tokens** in the Messenger API setup.
 4. Copy the complete generated Page access token.
 5. Do not put it in GitHub or Railway.
 6. Immediately open [the MaidThis dashboard](https://maidthis-meta-followups-production.up.railway.app/admin).
-7. In **Connections**, paste the token into **Page access token from Meta**.
-8. Click **Connect Meta Page**.
+7. In **Connections**, confirm the prefilled Page ID is `102594497956428` and the Page name is `MaidThis Cleaning`.
+8. Paste the token into **Page access token from Meta**.
+9. Click **Connect Meta Page**.
 
 The app performs these steps automatically:
 
-- asks Meta which Page owns the token;
-- rejects a token that is not a valid Page token;
-- subscribes the Page to the app's webhook;
+- uses the Page ID Meta already displayed instead of requesting restricted Page metadata;
+- attempts to subscribe the Page to the app's webhook, while preserving the connection if subscriptions were already configured manually;
 - encrypts the token with AES-256-GCM;
 - stores only encrypted token data in Supabase;
 - creates the Facebook Messenger connection;
-- discovers and creates the linked Instagram connection when Meta returns it.
+- creates a permitted Instagram connection automatically when the first Instagram webhook arrives.
 
-Success looks like one Facebook connection card and, if Instagram is linked and permissioned, one Instagram connection card.
+Immediate success looks like one Facebook connection card. If Instagram is linked, permissioned, and subscribed, its card appears after the first Instagram DM webhook reaches the app.
 
 If only Facebook appears, the Facebook token worked. Recheck the Instagram Professional-account link, the Instagram permission in the Messenger use case, and **Allow access to messages** in Instagram.
 
@@ -432,9 +381,9 @@ The custom Railway dashboard cannot control GoHighLevel without a GoHighLevel Pr
 | Dashboard returns a Supabase relation error | SQL migration missing | Run `001`, `002`, and `003` in order |
 | Meta webhook verification fails | Callback or verify-token mismatch | Use the exact callback and the same token in Meta and Railway |
 | MaidThis Page is absent in Meta | Personal profile lacks the Page task Meta requires | Check app role and Page task access, otherwise use GHL or obtain access |
-| Dashboard says token is not a Page token | Wrong, expired, or copied-incompletely token | Regenerate it under Messenger API Setup for the MaidThis Page |
+| Dashboard reports Meta error #100 while connecting | Old build is still requesting Page metadata | Deploy v3.1, enter Page ID `102594497956428`, and paste the same generated token |
 | Connect reports a Meta permission error | App or profile lacks the required Page messaging permission | Reconnect the Page in Meta and approve all requested Page permissions |
-| Facebook connects but Instagram does not | IG not linked, not Professional, missing permission, or Connected Tools off | Link it to the Page, enable messaging access, then reconnect the Page token |
+| Facebook connects but Instagram does not appear | No permitted Instagram webhook has arrived, or IG is not linked/permissioned | Link it to the Page, enable Connected Tools and Instagram webhooks, then send a test DM from another account |
 | Test user works but a real lead does not | Development-mode or App Review restriction | Complete Meta's Live/Advanced Access process or use GHL's approved integration |
 | Queue says `outside_standard_messaging_window` | More than the permitted window since user interaction | Do not bypass it; wait for a new interaction or use an approved product |
 | Dashboard accepts a token but later sends fail | Token expired, revoked, or encryption key changed | Generate a new Page token and reconnect it |

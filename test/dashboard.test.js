@@ -9,6 +9,7 @@ test('dashboard is dark-first and accepts a Page token without custom OAuth', ()
   });
   assert.match(html, /localStorage\.getItem\('mt-theme'\)\|\|'dark'/);
   assert.match(html, /Connect Meta Page/);
+  assert.match(html, /name="page_id" value="102594497956428"/);
   assert.match(html, /name="page_access_token"/);
   assert.match(html, /type="password"/);
   assert.match(html, /Global sending is paused/);

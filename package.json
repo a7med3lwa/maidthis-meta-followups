@@ -1,6 +1,6 @@
 {
   "name": "maidthis-meta-followups",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "description": "Standalone Meta Messenger and Instagram follow-up automation for MaidThis",
