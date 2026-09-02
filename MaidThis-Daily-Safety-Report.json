@@ -1,0 +1,13 @@
+{
+  "name": "MaidThis - Daily Follow-up Safety Report",
+  "nodes": [
+    {"parameters":{"rule":{"interval":[{"field":"days","triggerAtHour":18,"triggerAtMinute":45}]}},"id":"daily","name":"Daily at 6:45 PM","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[260,300]},
+    {"parameters":{"url":"={{$env.FOLLOWUP_APP_URL + '/internal/summary'}}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"x-internal-token","value":"={{$env.FOLLOWUP_INTERNAL_TOKEN}}"}]}},"id":"summary","name":"Get safety summary","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[520,300]}
+  ],
+  "connections":{"Daily at 6:45 PM":{"main":[[{"node":"Get safety summary","type":"main","index":0}]]}},
+  "settings":{"executionOrder":"v1","timezone":"America/Los_Angeles"},
+  "active":false,
+  "versionId":"814ac393-cb83-46ac-91d1-dcad154015de",
+  "meta":{"templateCredsSetupCompleted":true},
+  "tags":[]
+}

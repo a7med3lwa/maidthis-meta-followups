@@ -1,0 +1,14 @@
+{
+  "name": "maidthis-meta-followups",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Policy-aware Meta Messenger and Instagram follow-up automation for MaidThis",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --test"
+  }
+}

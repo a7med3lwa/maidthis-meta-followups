@@ -1,0 +1,13 @@
+{
+  "name": "MaidThis - Meta Follow-up Scheduler",
+  "nodes": [
+    {"parameters":{"rule":{"interval":[{"field":"minutes","minutesInterval":5}]}},"id":"schedule","name":"Every 5 minutes","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[260,300]},
+    {"parameters":{"method":"POST","url":"={{$env.FOLLOWUP_APP_URL + '/internal/tick'}}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"x-internal-token","value":"={{$env.FOLLOWUP_INTERNAL_TOKEN}}"}]},"options":{"timeout":120000}},"id":"tick","name":"Schedule and send eligible follow-ups","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[520,300]}
+  ],
+  "connections":{"Every 5 minutes":{"main":[[{"node":"Schedule and send eligible follow-ups","type":"main","index":0}]]}},
+  "settings":{"executionOrder":"v1","timezone":"America/Los_Angeles"},
+  "active":false,
+  "versionId":"59e6582b-5e2e-4fd2-b2ca-9e657978ed10",
+  "meta":{"templateCredsSetupCompleted":true},
+  "tags":[]
+}
